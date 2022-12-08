@@ -288,66 +288,52 @@ jobs:
       - revert-migrations     
                     
   deploy-backend:
+
     docker:
-      # Docker image here that supports Ansible
       - image: cimg/base:stable
+
     steps:
-      # Checkout code from git
-      # Add ssh keys with fingerprint
-      # attach workspace
       - checkout
       - install_awscli
-      - install_ansible
       - install_nodejs
+      - install_ansible
       - add_ssh_keys:
-          fingerprints: ["98:cf:41:30:a7:b6:42:f0:07:f8:bb:3b:42:40:37:23"]
+          fingerprints:
+            - "ff:de:18:a0:55:17:85:ef:16:e0:a4:76:5c:bb:74:fe"
       - attach_workspace:
           at: ~/
-      - restore_cache:
-          keys: [backend-deps]
+
       - run:
           name: Install dependencies
           command: |
             cd backend
             npm install
-      - run: 
+
+      - run:
           name: Package Backend
           command: |
-            # cd backend
-            # npm run build
-            # tar -czf artifact.tar.gz dist/* package*
-
-            # cd ..
-            # cp backend/artifact.tar.gz .circleci/ansible/roles/deploy/files
-
             cd backend
             npm run build
-            cd ..
-            # Zip the directory
-            tar -C backend -czvf artifact.tar.gz .
-
+            tar -czf artifact.tar.gz dist/* package*
             cd ..
             cp backend/artifact.tar.gz .circleci/ansible/roles/deploy/files
-            
 
-            
       - run:
           name: Deploy backend
           command: |
-            export TYPEORM_MIGRATIONS_DIR=./migrations
-            export TYPEORM_ENTITIES=./modules/domain/**/*.entity{.ts,.js}
-            export TYPEORM_MIGRATIONS=./migrations/*.ts 
-
-            # export NODE_ENV=production
-            # export VERSION=1
-            # export TYPEORM_CONNECTION=postgres
-            # export TYPEORM_MIGRATIONS_DIR=./migrations
-            # export TYPEORM_ENTITIES=./modules/domain/**/*.entity{.ts,.js}
-            # export TYPEORM_MIGRATIONS=./migrations/*{.ts,.js}
-
             cd .circleci/ansible
+            BACKEND_IP=$(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=backend-${CIRCLE_WORKFLOW_ID:0:7}" \
+            --query 'Reservations[*].Instances[*].PublicIpAddress' \
+            --output text)
+            export API_URL="http://${BACKEND_IP}:3030"
+            echo $BACKEND_IP >> inventory.txt
             cat inventory.txt
+            pwd
             ansible-playbook -i inventory.txt deploy-backend.yml
+
+      - destroy-environment
+      - revert-migrations
             
       # Here's where you will add some code to rollback on failure 
       - destroy-environment
