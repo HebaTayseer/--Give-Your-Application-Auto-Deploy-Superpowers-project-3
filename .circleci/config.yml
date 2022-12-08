@@ -25,12 +25,12 @@ commands:
               sudo apt install ansible -y
     
     install_nodejs:
-      description: Install Node.js V13
+      description: Install Node.js V14
       steps:
         - run:
-            name: Install Node.js V13
+            name: Install Node.js V14
             command: |
-              curl -fsSL https://deb.nodesource.com/setup_13.x | sudo -E bash -
+              curl -fsSL https://deb.nodesource.com/setup_14.x | sudo -E bash -
               sudo apt install -y nodejs
       
     destroy-environment:
@@ -171,7 +171,7 @@ jobs:
     steps:
       - checkout
       - install_awscli
-            
+
       - run:
           name: Ensure back-end infrastructure exists
           command: |
@@ -230,7 +230,7 @@ jobs:
 
   run-migrations:
     docker:
-      - image: cimg/node:13.8.0
+      - image: cimg/node:14.18.2
     steps:
       - checkout
       - install_awscli
@@ -259,7 +259,6 @@ jobs:
       # Checkout code from git
       - checkout
       - install_awscli
-      - install_ansible
       - install_nodejs
       - restore_cache:
           keys: [frontend-deps]
@@ -276,16 +275,13 @@ jobs:
                 --query 'Reservations[*].Instances[*].PublicIpAddress' \
                 --output text)
 
-            echo "API_URL=http://${BACKEND_PUBLIC_IP}:3030" 
-
+            echo "API_URL=http://${BACKEND_PUBLIC_IP}:3030" >> frontend/.env
+            cat frontend/.env
       - run:
           name: Deploy frontend objects
           command: |
             cd frontend
-            echo "API_URL=http://$BACKEND_PUBLIC_IP:3030" > .env
-            npm install
-            npm run build:prod
-            # aws s3 sync dist s3://udapeople-project
+            npm run build
             aws s3 cp dist s3://udapeople-${CIRCLE_WORKFLOW_ID:0:7} --recursive
       
       - destroy-environment
@@ -315,42 +311,32 @@ jobs:
             cd backend
             npm install
       - run: 
-          name: deploy Backend
+          name: Package Backend
           command: |
-            export TYPEORM_HOST=$(aws ec2 describe-instances \
-                --filters "Name=tag:Name, Values=backend-${CIRCLE_WORKFLOW_ID:0:7}" \
-                --query 'Reservations[*].Instances[*].PublicIpAddress' \
-                --output text)
-            echo $TYPEORM_HOST >> .circleci/ansible/inventory.txt
-
-            cd backend 
-            npm i
+            cd backend
             npm run build
             tar -czf artifact.tar.gz dist/* package*
-            cp artifact.tar.gz ~/project/.circleci/ansible/roles/deploy/artifact.tar.gz
-            ls ../.circleci/ansible/roles/deploy/
-            cd ../.circleci/ansible
+
+            cd ..
+            cp backend/artifact.tar.gz .circleci/ansible/roles/deploy/files
+            
+      - run:
+          name: Deploy backend
+          command: |
+            export TYPEORM_MIGRATIONS_DIR=./migrations
+            export TYPEORM_ENTITIES=./modules/domain/**/*.entity{.ts,.js}
+            export TYPEORM_MIGRATIONS=./migrations/*.ts 
+
+            # export NODE_ENV=production
+            # export VERSION=1
+            # export TYPEORM_CONNECTION=postgres
+            # export TYPEORM_MIGRATIONS_DIR=./migrations
+            # export TYPEORM_ENTITIES=./modules/domain/**/*.entity{.ts,.js}
+            # export TYPEORM_MIGRATIONS=./migrations/*{.ts,.js}
+
+            cd .circleci/ansible
+            cat inventory.txt
             ansible-playbook -i inventory.txt deploy-backend.yml
-           
- 
-      # - run:
-      #     name: Deploy backend
-      #     command: |
-      #       export TYPEORM_MIGRATIONS_DIR=./migrations
-      #       export TYPEORM_ENTITIES=./modules/domain/**/*.entity{.ts,.js}
-      #       export TYPEORM_MIGRATIONS=./migrations/*.ts 
-
-      #       # export NODE_ENV=production
-      #       # export VERSION=1
-      #       # export TYPEORM_CONNECTION=postgres
-      #       # export TYPEORM_MIGRATIONS_DIR=./migrations
-      #       # export TYPEORM_ENTITIES=./modules/domain/**/*.entity{.ts,.js}
-      #       # export TYPEORM_MIGRATIONS=./migrations/*{.ts,.js}
-
-      #       cd .circleci/ansible
-      #       echo "Contents  of the inventory.txt file is -------"
-      #       cat inventory.txt
-      #       ansible-playbook -i inventory.txt deploy-backend.yml
             
       # Here's where you will add some code to rollback on failure 
       - destroy-environment
