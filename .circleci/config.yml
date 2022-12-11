@@ -412,9 +412,11 @@ jobs:
 
 cleanup:
     docker:
-      # Docker image here
+      - image: cimg/base:stable
     steps:
-      # Checkout code from git
+      - checkout
+      - install_awscli
+      - install_nodejs
       - run:
           name: Get old stack workflow id
           command: |
